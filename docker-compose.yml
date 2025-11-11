@@ -1,0 +1,95 @@
+version: '3.8'
+
+services:
+  # --- PostgreSQL andmebaas ---
+  database:
+    image: postgres:14-alpine
+    container_name: todo_db
+    environment:
+      POSTGRES_DB: ${DB_NAME:-tododb}
+      POSTGRES_USER: ${DB_USER:-todouser}
+      POSTGRES_PASSWORD: ${DB_PASS:-mypassword}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-todouser} -d ${DB_NAME:-tododb}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+  # --- Redis (cache) ---
+  redis:
+    image: redis:alpine
+    container_name: todo_redis
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # --- Node.js API ---
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: todo_api
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      DB_HOST: database
+      DB_NAME: ${DB_NAME:-tododb}
+      DB_USER: ${DB_USER:-todouser}
+      DB_PASS: ${DB_PASS:-mypassword}
+      DB_PORT: "5432"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      PORT: ${API_PORT:-3000}
+    networks:
+      - backend
+      - frontend
+    # Dev-mode: live reload (nt nodemon). Eemalda, kui ehitad prod-režiimi.
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+
+  # --- Frontend (kui ehitad eraldi pildiks) ---
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: todo_frontend
+    networks:
+      - frontend
+    restart: unless-stopped
+
+  # --- Nginx Reverse Proxy + static ---
+  nginx:
+    image: nginx:alpine
+    container_name: todo_nginx
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./frontend/public:/usr/share/nginx/html:ro
+    depends_on:
+      - api
+      - frontend
+    networks:
+      - frontend
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+  frontend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

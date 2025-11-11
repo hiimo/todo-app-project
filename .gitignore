@@ -1,0 +1,19 @@
+# Node / API / Frontend buildid
+node_modules/
+dist/
+build/
+
+# Docker
+*.pid
+*.log
+.env
+postgres_data/
+docker-data/
+volumes/
+**/__pycache__/
+
+# IDE ja OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
